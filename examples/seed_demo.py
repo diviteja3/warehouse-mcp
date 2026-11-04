@@ -48,6 +48,7 @@ def seed(url: str) -> None:
         for ddl in SCHEMA:
             conn.execute(text(ddl))
 
+        # ISO strings, not date objects: sqlite3's default date adapter is deprecated in 3.12.
         start = date(2026, 1, 1)
         customers = []
         for i in range(1, 51):
@@ -59,7 +60,7 @@ def seed(url: str) -> None:
                     "email": f"{first.lower()}.{last.lower()}{i}@example.com",
                     "phone": f"+1-555-{rng.randint(100, 999)}-{rng.randint(1000, 9999)}",
                     "region": rng.choice(REGIONS),
-                    "signup_date": start + timedelta(days=rng.randint(0, 120)),
+                    "signup_date": (start + timedelta(days=rng.randint(0, 120))).isoformat(),
                 }
             )
         conn.execute(
@@ -77,7 +78,7 @@ def seed(url: str) -> None:
                     "c": rng.randint(1, 50),
                     "p": rng.randint(1, len(PRODUCTS)),
                     "q": rng.randint(1, 4),
-                    "d": start + timedelta(days=rng.randint(0, 300)),
+                    "d": (start + timedelta(days=rng.randint(0, 300))).isoformat(),
                     "s": rng.choice(STATUSES),
                 }
                 for i in range(1, 501)
@@ -90,13 +91,13 @@ def seed(url: str) -> None:
                 {
                     "id": 1,
                     "c": 3,
-                    "d": date(2026, 3, 2),
+                    "d": "2026-03-02",
                     "s": "Refund",
                     "b": "Please refund to card 4111 1111 1111 1111.",
                 },
-                {"id": 2, "c": 9, "d": date(2026, 4, 9), "s": "Login", "b": "Reach me at backup.mail@example.org."},
-                {"id": 3, "c": 12, "d": date(2026, 5, 1), "s": "Tax form", "b": "My SSN is 123-45-6789 for the form."},
-                {"id": 4, "c": 20, "d": date(2026, 6, 3), "s": "Sizing", "b": "Do the trail shoes run small?"},
+                {"id": 2, "c": 9, "d": "2026-04-09", "s": "Login", "b": "Reach me at backup.mail@example.org."},
+                {"id": 3, "c": 12, "d": "2026-05-01", "s": "Tax form", "b": "My SSN is 123-45-6789 for the form."},
+                {"id": 4, "c": 20, "d": "2026-06-03", "s": "Sizing", "b": "Do the trail shoes run small?"},
             ],
         )
 
