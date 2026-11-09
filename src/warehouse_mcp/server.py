@@ -13,6 +13,7 @@ from warehouse_mcp.audit import AuditLog
 from warehouse_mcp.config import Settings
 from warehouse_mcp.db import QueryTimeout, Warehouse
 from warehouse_mcp.masking import PiiPolicy
+from warehouse_mcp.row_filters import parse_row_filters
 from warehouse_mcp.sql_guard import QueryRejected, guard
 
 INSTRUCTIONS = """Read-only access to an analytics database.
@@ -28,6 +29,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
     wh = warehouse or Warehouse(settings.url, settings.statement_timeout_ms)
     pii = PiiPolicy(settings.pii_columns)
     audit = AuditLog(settings.audit_log)
+    row_filters = parse_row_filters(settings.row_filters or {}, wh.sqlglot_dialect)
 
     server = MCPServer(name="warehouse-mcp", version="0.1.0", instructions=INSTRUCTIONS)
 
@@ -57,7 +59,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
     @server.tool(annotations=READ_ONLY)
     def run_query(sql: str) -> dict[str, Any]:
         """Run one read-only SELECT. Returns columns, rows (capped), whether the result was truncated,
-        and which columns were masked as PII."""
+        which columns were masked as PII, and which tables were narrowed by a row-level filter."""
         started = time.perf_counter()
         try:
             q = guard(
@@ -66,6 +68,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
                 max_rows=settings.max_rows,
                 allowed_schemas=settings.allowed_schemas,
                 is_pii=pii.is_pii_column,
+                row_filters=row_filters,
             )
         except QueryRejected as exc:
             audit.record("run_query", status="rejected", sql=sql, reason=str(exc))
@@ -91,6 +94,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
             rows=len(rows),
             truncated=result.truncated,
             masked_columns=masked,
+            filtered_tables=q.filtered_tables,
             ms=elapsed,
         )
         return {
@@ -99,6 +103,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
             "row_count": len(rows),
             "truncated": result.truncated,
             "masked_columns": masked,
+            "filtered_tables": q.filtered_tables,
             "elapsed_ms": elapsed,
         }
 

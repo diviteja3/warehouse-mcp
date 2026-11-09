@@ -18,6 +18,8 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
+from warehouse_mcp.row_filters import RowFilter, apply_row_filters
+
 # Nodes that write, change session state or lock rows: rejected anywhere in
 # the tree, including inside CTEs and subqueries.
 FORBIDDEN_NODES: tuple[type[exp.Expression], ...] = tuple(
@@ -94,6 +96,7 @@ class GuardedQuery:
     sql: str  # what will actually run (row-capped)
     tables: list[str]  # tables referenced, as schema.table or table
     pii_outputs: set[int] = field(default_factory=set)  # output positions derived from PII columns
+    filtered_tables: list[str] = field(default_factory=list)  # tables narrowed by a row filter
 
 
 def _function_name(node: exp.Func) -> str:
@@ -135,6 +138,7 @@ def guard(
     max_rows: int,
     allowed_schemas: frozenset[str] | None = None,
     is_pii=lambda name: False,
+    row_filters: tuple[RowFilter, ...] = (),
 ) -> GuardedQuery:
     sql = sql.strip().rstrip(";").strip()
     if not sql:
@@ -170,13 +174,19 @@ def guard(
             raise QueryRejected(f"Schema {schema!r} is not in the allowed list: {sorted(allowed_schemas)}.")
         tables.append(f"{schema}.{name}" if schema else name)
 
+    # PII is traced on the agent's query; the row filter rewrite only narrows rows.
+    pii_outputs = _pii_outputs(tree, is_pii)
+    tree = tree.copy()
+    filtered = apply_row_filters(tree, row_filters, ctes, dialect)
+
     # Cap rows by wrapping, so ORDER BY / LIMIT / UNION inside the query keep
     # their meaning. Fetching one extra row tells us whether we truncated.
-    capped = exp.select("*").from_(tree.copy().subquery("_q")).limit(max_rows + 1)
+    capped = exp.select("*").from_(tree.subquery("_q")).limit(max_rows + 1)
 
     return GuardedQuery(
         original=sql,
         sql=capped.sql(dialect=dialect),
         tables=sorted(set(tables)),
-        pii_outputs=_pii_outputs(tree, is_pii),
+        pii_outputs=pii_outputs,
+        filtered_tables=filtered,
     )
