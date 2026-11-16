@@ -83,8 +83,12 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
                 raise ToolError(f"Database error: {message}") from None
             if est is not None and est.total_cost > settings.max_plan_cost:
                 audit.record(
-                    "run_query", status="rejected", sql=sql, tables=q.tables,
-                    reason="plan cost", plan_cost=est.total_cost,
+                    "run_query",
+                    status="rejected",
+                    sql=sql,
+                    tables=q.tables,
+                    reason="plan cost",
+                    plan_cost=est.total_cost,
                 )
                 raise ToolError(
                     f"Query rejected: estimated plan cost {est.total_cost:.0f} exceeds the limit of "
