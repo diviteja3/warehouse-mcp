@@ -20,6 +20,7 @@ class Settings:
     pii_columns: tuple[str, ...] = DEFAULT_PII_COLUMNS
     audit_log: str | None = "warehouse_audit.jsonl"
     row_filters: dict[str, str] | None = None  # {"table" or "schema.table": "SQL predicate"}
+    max_plan_cost: float | None = None  # reject queries whose planner cost exceeds this (PostgreSQL)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -39,6 +40,14 @@ class Settings:
                 raise SystemExit(f"WAREHOUSE_ROW_FILTERS is not valid JSON: {exc}") from None
             if not isinstance(row_filters, dict) or not all(isinstance(v, str) for v in row_filters.values()):
                 raise SystemExit('WAREHOUSE_ROW_FILTERS must be a JSON object like {"customers": "region = \'EU\'"}')
+        max_plan_cost = None
+        if os.getenv("WAREHOUSE_MAX_PLAN_COST"):
+            try:
+                max_plan_cost = float(os.environ["WAREHOUSE_MAX_PLAN_COST"])
+            except ValueError:
+                raise SystemExit("WAREHOUSE_MAX_PLAN_COST must be a number") from None
+            if max_plan_cost <= 0:
+                raise SystemExit("WAREHOUSE_MAX_PLAN_COST must be greater than 0")
         return cls(
             url=url,
             max_rows=int(os.getenv("WAREHOUSE_MAX_ROWS", "200")),
@@ -47,4 +56,5 @@ class Settings:
             pii_columns=DEFAULT_PII_COLUMNS + tuple(extra_pii),
             audit_log=os.getenv("WAREHOUSE_AUDIT_LOG", "warehouse_audit.jsonl") or None,
             row_filters=row_filters,
+            max_plan_cost=max_plan_cost,
         )

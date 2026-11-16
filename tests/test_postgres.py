@@ -37,3 +37,8 @@ def test_statement_timeout(pg):
 def test_list_tables_skips_system_schemas(pg):
     schemas = {t["schema"] for t in pg.list_tables()}
     assert "pg_catalog" not in schemas and "public" in schemas
+
+
+def test_estimate_returns_planner_cost(pg):
+    est = pg.estimate("SELECT * FROM orders")
+    assert est.total_cost > 0 and est.plan_rows > 0
