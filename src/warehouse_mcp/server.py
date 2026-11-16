@@ -74,6 +74,28 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
             audit.record("run_query", status="rejected", sql=sql, reason=str(exc))
             raise ToolError(f"Query rejected: {exc}") from None
 
+        if settings.max_plan_cost is not None:
+            try:
+                est = wh.estimate(q.sql)
+            except Exception as exc:
+                message = str(exc).splitlines()[0][:300]
+                audit.record("run_query", status="error", sql=sql, tables=q.tables, error=type(exc).__name__)
+                raise ToolError(f"Database error: {message}") from None
+            if est is not None and est.total_cost > settings.max_plan_cost:
+                audit.record(
+                    "run_query",
+                    status="rejected",
+                    sql=sql,
+                    tables=q.tables,
+                    reason="plan cost",
+                    plan_cost=est.total_cost,
+                )
+                raise ToolError(
+                    f"Query rejected: estimated plan cost {est.total_cost:.0f} exceeds the limit of "
+                    f"{settings.max_plan_cost:.0f} (about {est.plan_rows:.0f} rows). "
+                    "Add selective filters or aggregate, then try again."
+                )
+
         try:
             result = wh.run(q.sql, settings.max_rows)
         except QueryTimeout as exc:

@@ -12,6 +12,7 @@ assumes the others might fail.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,20 @@ class QueryResult:
     rows: list[list[Any]]
     truncated: bool
     elapsed_ms: int
+
+
+@dataclass
+class PlanEstimate:
+    total_cost: float
+    plan_rows: float
+
+
+def parse_pg_plan(raw: Any) -> PlanEstimate:
+    """Read the root node of `EXPLAIN (FORMAT JSON)` output."""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    plan = raw[0]["Plan"]
+    return PlanEstimate(float(plan["Total Cost"]), float(plan["Plan Rows"]))
 
 
 def _jsonable(value: Any) -> Any:
@@ -94,6 +109,19 @@ class Warehouse:
         return {"schema": schema, "table": table, "columns": columns, "primary_key": pk, "foreign_keys": fks}
 
     # ---- queries ------------------------------------------------------------
+
+    def estimate(self, sql: str) -> PlanEstimate | None:
+        """Planner cost estimate without executing the query. PostgreSQL only; None elsewhere."""
+        if self.dialect != "postgresql":
+            return None
+        with self.engine.connect() as conn:
+            try:
+                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+                conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(self.timeout_ms)}")
+                raw = conn.execute(text("EXPLAIN (FORMAT JSON) " + sql)).scalar()
+                return parse_pg_plan(raw)
+            finally:
+                conn.rollback()
 
     def run(self, sql: str, max_rows: int) -> QueryResult:
         started = time.perf_counter()

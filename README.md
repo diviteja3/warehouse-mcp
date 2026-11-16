@@ -97,6 +97,7 @@ Claude Desktop, Cursor, VS Code and other MCP clients use the same shape:
 | `WAREHOUSE_TIMEOUT_MS` | `5000` | Statement timeout |
 | `WAREHOUSE_PII_COLUMNS` | built-in list | Extra column-name patterns to mask, added to the defaults (`email`, `phone`, `ssn`, `full_name`, `address`, …) |
 | `WAREHOUSE_ROW_FILTERS` | none | JSON object of row-level filters, for example `{"customers": "region = 'EU'", "sales.orders": "tenant_id = 42"}`. A bare table name matches that table in every schema. Checked at startup. |
+| `WAREHOUSE_MAX_PLAN_COST` | off | Reject queries whose `EXPLAIN` total cost exceeds this number, before running them. PostgreSQL only; ignored on other databases. |
 | `WAREHOUSE_AUDIT_LOG` | `warehouse_audit.jsonl` | Empty string disables it |
 
 **In production, also connect as a role with only `SELECT` grants.** This server is defense in depth, not a replacement for database permissions.
@@ -108,7 +109,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-There are 64 tests: guard attack cases, row-filter bypass attempts, PII tracing through aliases, value-level masking, end-to-end calls through a real MCP client, and audit-log contents. Read-only and timeout behaviour are tested against the database with the guard bypassed. CI runs everything against a real PostgreSQL 16 on Python 3.10, 3.11 and 3.12.
+There are 70 tests: guard attack cases, row-filter bypass attempts, PII tracing through aliases, value-level masking, end-to-end calls through a real MCP client, and audit-log contents. Read-only and timeout behaviour are tested against the database with the guard bypassed. CI runs everything against a real PostgreSQL 16 on Python 3.10, 3.11 and 3.12.
 
 ## Limitations
 
@@ -120,6 +121,6 @@ There are 64 tests: guard attack cases, row-filter bypass attempts, PII tracing 
 
 - [ ] Snowflake and BigQuery read-only session enforcement
 - [x] Per-table row-level filters (for example `region = 'EU'` for an EU-only agent)
-- [ ] Query cost estimate from `EXPLAIN` before execution, rejecting full scans over a threshold
+- [x] Query cost estimate from `EXPLAIN` before execution, rejecting queries over a cost threshold (PostgreSQL)
 - [ ] OpenTelemetry spans per tool call
 - [ ] Streamable HTTP transport with OAuth for shared deployments
