@@ -15,6 +15,7 @@ from warehouse_mcp.db import QueryTimeout, Warehouse
 from warehouse_mcp.masking import PiiPolicy
 from warehouse_mcp.row_filters import parse_row_filters
 from warehouse_mcp.sql_guard import QueryRejected, guard
+from warehouse_mcp.telemetry import traced
 
 INSTRUCTIONS = """Read-only access to an analytics database.
 Workflow: call list_tables, then describe_table for the tables you need, then run_query.
@@ -34,6 +35,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
     server = MCPServer(name="warehouse-mcp", version="0.1.0", instructions=INSTRUCTIONS)
 
     @server.tool(annotations=READ_ONLY)
+    @traced("list_tables")
     def list_tables() -> dict[str, Any]:
         """List the tables and views you can query."""
         tables = wh.list_tables(settings.allowed_schemas)
@@ -41,6 +43,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
         return {"tables": tables}
 
     @server.tool(annotations=READ_ONLY)
+    @traced("describe_table")
     def describe_table(table: str, schema: str | None = None) -> dict[str, Any]:
         """Columns, types, primary key and foreign keys for one table. Columns treated as PII are flagged."""
         if settings.allowed_schemas is not None and schema and schema.lower() not in settings.allowed_schemas:
@@ -57,6 +60,7 @@ def create_server(settings: Settings, warehouse: Warehouse | None = None) -> MCP
         return info
 
     @server.tool(annotations=READ_ONLY)
+    @traced("run_query")
     def run_query(sql: str) -> dict[str, Any]:
         """Run one read-only SELECT. Returns columns, rows (capped), whether the result was truncated,
         which columns were masked as PII, and which tables were narrowed by a row-level filter."""
