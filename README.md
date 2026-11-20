@@ -102,6 +102,10 @@ Claude Desktop, Cursor, VS Code and other MCP clients use the same shape:
 
 **In production, also connect as a role with only `SELECT` grants.** This server is defense in depth, not a replacement for database permissions.
 
+## Tracing
+
+With `pip install ".[otel]"`, every tool call emits a `warehouse_mcp.<tool>` span (attributes `mcp.tool`, `warehouse.status`, and for queries `warehouse.row_count` and `warehouse.truncated`). Spans never contain SQL text or result data. Without the extra installed, tracing is a no-op. Export them with the standard OpenTelemetry setup, for example `opentelemetry-instrument warehouse-mcp`.
+
 ## Tests
 
 ```bash
@@ -109,7 +113,7 @@ pip install -e ".[dev]"
 pytest -q
 ```
 
-There are 70 tests: guard attack cases, row-filter bypass attempts, PII tracing through aliases, value-level masking, end-to-end calls through a real MCP client, and audit-log contents. Read-only and timeout behaviour are tested against the database with the guard bypassed. CI runs everything against a real PostgreSQL 16 on Python 3.10, 3.11 and 3.12.
+There are 70+ tests: guard attack cases, row-filter bypass attempts, PII tracing through aliases, value-level masking, end-to-end calls through a real MCP client, and audit-log contents. Read-only and timeout behaviour are tested against the database with the guard bypassed. CI runs everything against a real PostgreSQL 16 on Python 3.10, 3.11 and 3.12.
 
 ## Limitations
 
@@ -122,5 +126,5 @@ There are 70 tests: guard attack cases, row-filter bypass attempts, PII tracing 
 - [ ] Snowflake and BigQuery read-only session enforcement
 - [x] Per-table row-level filters (for example `region = 'EU'` for an EU-only agent)
 - [x] Query cost estimate from `EXPLAIN` before execution, rejecting queries over a cost threshold (PostgreSQL)
-- [ ] OpenTelemetry spans per tool call
+- [x] OpenTelemetry spans per tool call (`pip install ".[otel]"`; configure an exporter in your own process or with `opentelemetry-instrument`)
 - [ ] Streamable HTTP transport with OAuth for shared deployments
