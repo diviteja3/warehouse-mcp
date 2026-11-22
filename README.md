@@ -119,11 +119,12 @@ There are 70+ tests: guard attack cases, row-filter bypass attempts, PII tracing
 
 - PII detection is name- and pattern-based. It won't recognise a column called `notes` that holds home addresses, so add those columns with `WAREHOUSE_PII_COLUMNS`.
 - Masking follows aliases and expressions but not every path. For example, `string_agg` over a PII column is masked, while a join that reconstructs PII from non-PII columns isn't detected.
-- Snowflake, BigQuery and other SQLAlchemy dialects will connect, but only Postgres and SQLite have read-only and timeout enforcement at the database level today.
+- Snowflake, BigQuery and other SQLAlchemy dialects will connect. Postgres and SQLite have read-only and timeout enforcement at the database level; Snowflake has the timeout only (use a SELECT-only role); BigQuery has neither yet.
 
 ## Roadmap
 
-- [ ] Snowflake and BigQuery read-only session enforcement
+- [x] Snowflake statement timeout enforced per session (`STATEMENT_TIMEOUT_IN_SECONDS`)
+- [ ] Snowflake and BigQuery read-only session enforcement (neither has a read-only session mode; needs role/IAM checks at startup)
 - [x] Per-table row-level filters (for example `region = 'EU'` for an EU-only agent)
 - [x] Query cost estimate from `EXPLAIN` before execution, rejecting queries over a cost threshold (PostgreSQL)
 - [x] OpenTelemetry spans per tool call (`pip install ".[otel]"`; configure an exporter in your own process or with `opentelemetry-instrument`)
