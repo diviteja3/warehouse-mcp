@@ -6,6 +6,10 @@
 - SQLite: connections set `PRAGMA query_only = ON` and a progress handler
   stops queries that exceed the timeout.
 
+- Snowflake: each connection runs `ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS`,
+  so runaway queries stop at the server. Snowflake has no read-only session
+  mode, so writes must be prevented with a SELECT-only role.
+
 Use a database role with SELECT-only grants in production as well. Each layer
 assumes the others might fail.
 """
@@ -45,6 +49,25 @@ def parse_pg_plan(raw: Any) -> PlanEstimate:
         raw = json.loads(raw)
     plan = raw[0]["Plan"]
     return PlanEstimate(float(plan["Total Cost"]), float(plan["Plan Rows"]))
+
+
+def session_statements(dialect: str, timeout_ms: int) -> list[str]:
+    """Statements to run on a fresh connection to enforce limits at the server."""
+    if dialect == "postgresql":
+        return ["SET TRANSACTION READ ONLY", f"SET LOCAL statement_timeout = {int(timeout_ms)}"]
+    if dialect == "snowflake":
+        seconds = max(1, -(-int(timeout_ms) // 1000))  # Snowflake only accepts whole seconds; round up
+        return [f"ALTER SESSION SET STATEMENT_TIMEOUT_IN_SECONDS = {seconds}"]
+    return []
+
+
+def is_timeout_error(dialect: str, exc: Exception) -> bool:
+    msg = str(exc).lower()
+    if dialect == "sqlite":
+        return "interrupted" in msg
+    if dialect == "snowflake":
+        return "statement reached its statement or warehouse timeout" in msg or "timeout" in msg and "000630" in msg
+    return "statement timeout" in msg
 
 
 def _jsonable(value: Any) -> Any:
@@ -126,10 +149,9 @@ class Warehouse:
     def run(self, sql: str, max_rows: int) -> QueryResult:
         started = time.perf_counter()
         with self.engine.connect() as conn:
-            if self.dialect == "postgresql":
-                conn.exec_driver_sql("SET TRANSACTION READ ONLY")
-                conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(self.timeout_ms)}")
-            elif self.dialect == "sqlite":
+            for stmt in session_statements(self.dialect, self.timeout_ms):
+                conn.exec_driver_sql(stmt)
+            if self.dialect == "sqlite":
                 deadline = started + self.timeout_ms / 1000
                 raw = conn.connection.driver_connection
                 raw.set_progress_handler(lambda: 1 if time.perf_counter() > deadline else 0, 10_000)
@@ -139,9 +161,7 @@ class Warehouse:
                 columns = list(result.keys())
                 fetched = result.fetchmany(max_rows + 1)
             except Exception as exc:
-                if self.dialect == "sqlite" and "interrupted" in str(exc).lower():
-                    raise QueryTimeout(f"Query exceeded {self.timeout_ms} ms and was stopped.") from None
-                if "statement timeout" in str(exc).lower():
+                if is_timeout_error(self.dialect, exc):
                     raise QueryTimeout(f"Query exceeded {self.timeout_ms} ms and was stopped.") from None
                 raise
             finally:
